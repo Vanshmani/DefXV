@@ -1,32 +1,50 @@
-from flask import Flask, jsonify, render_template, send_from_directory
-from speech_to_text import recognize_speech_from_microphone
-from phrase_handler import handle_phrase
+import sounddevice as sd
+import vosk
+import json
+import sys
+import threading
+import queue
+import os
 
-app = Flask(__name__)
-video_directory = "Data-Set/Videos"  # Replace with the path to your video directory
-alphabet_directory = "Data-Set/Alphabet"  # Replace with the path to your alphabet directory
+model_path1 = os.path.join(os.getcwd(),'models','VOSK-SMALL-INDIAN-ENGLISH-0.4')
 
+model = vosk.Model(model_path1)
+recognizer = vosk.KaldiRecognizer(model, 16000)
 
-@app.route('/')
-def index():
-    return render_template('index.html')
+buffered_text = ""
+audio_queue = queue.Queue()
 
+def callback(indata, frames, time, status):
+    if status:
+        print(status, file=sys.stderr)
+    audio_queue.put(bytes(indata))
 
-@app.route('/process', methods=['POST'])
-def process():
-    phrase = recognize_speech_from_microphone()
-    if phrase.startswith("Could not"):
-        return jsonify({"error": phrase})
+def recognition_thread():
+    global buffered_text
+    while True:
+        audio_data = audio_queue.get()
+        if recognizer.AcceptWaveform(audio_data):
+            result = recognizer.Result()
+            result_dict = json.loads(result)
+            text = result_dict.get("text", "")
+            if text:
+                words = text.split()
+                for word in words:
+                    print(word)
+                buffered_text = "" 
+        else:
+            partial_result = recognizer.PartialResult()
+            result_dict = json.loads(partial_result)
+            partial_text = result_dict.get("partial", "")
+            buffered_text += partial_text
 
-    result = handle_phrase(phrase, video_directory, alphabet_directory)
-    result["recognized_phrase"] = phrase  # Add recognized phrase to the result
-    return jsonify(result)
+recognition_thread = threading.Thread(target=recognition_thread, daemon=True)
+recognition_thread.start()
 
-
-@app.route('/video/<path:filename>')
-def video(filename):
-    return send_from_directory(video_directory, filename)
-
-
-if __name__ == "__main__":
-    app.run(debug=True)
+with sd.RawInputStream(samplerate=16000, blocksize=4096, dtype='int16', channels=1, callback=callback):
+    print("Listening...")
+    try:
+        while True:
+            sd.sleep(1000)
+    except KeyboardInterrupt:
+        print("Stopped listening")

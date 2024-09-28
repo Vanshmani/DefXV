@@ -1,0 +1,7 @@
+torch
+faster-whisper
+numpy
+pandas
+matplotlib
+pillow
+opencv-python

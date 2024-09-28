@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Speech to Text</title>
+    <style>
+        #result img {
+            display: none;
+            max-width: 100%;
+            height: auto;
+        }
+    </style>
+    <script>
+        async function submitPhrase() {
+            try {
+                const recognition = new webkitSpeechRecognition(); // Create speech recognition instance
+                recognition.lang = 'en-US'; // Set language to US English
+
+                console.log("Start listening...");
+                recognition.start(); // Start speech recognition
+
+                // Event listener for speech recognition result
+                recognition.onresult = async function(event) {
+                    const transcript = event.results[event.results.length - 1][0].transcript.trim(); // Get transcript
+                    console.log("Recognized phrase:", transcript);
+
+                    const response = await fetch('/process', { // Send transcript to server for processing
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({phrase: transcript})
+                    });
+
+                    const data = await response.json(); // Parse response JSON
+                    console.log("Received response:", data);
+
+                    const resultContainer = document.getElementById('result');
+                    resultContainer.innerHTML = '';  // Clear previous results
+
+                    // Display the recognized phrase
+                    const phraseElement = document.createElement('p');
+                    phraseElement.textContent = `Recognized phrase: ${transcript}`;
+                    resultContainer.appendChild(phraseElement);
+
+                    if (data.type === 'video') {
+                        const videoElement = document.createElement('video');
+                        videoElement.src = `/video/${data.data}`;
+                        videoElement.controls = true;
+                        videoElement.autoplay = true;  // Add autoplay attribute
+                        resultContainer.appendChild(videoElement);
+                    } else if (data.type === 'images') {
+                        displayImagesWithInterval(data.data, resultContainer);
+                    } else if (data.type === 'error') {
+                        resultContainer.textContent = data.message;
+                    }
+
+                    recognition.stop(); // Stop speech recognition
+                };
+            } catch (error) {
+                console.error('Error:', error);
+            }
+        }
+
+        function displayImagesWithInterval(images, container) {
+    const interval = 1000;  // Interval in milliseconds
+    let index = 0;
+    let showImages = true; // Flag to control whether to continue showing images
+
+    // Clear previous images
+    container.innerHTML = '';
+
+    // Create image elements for each image
+    images.forEach((src, i) => {
+        const imgElement = document.createElement('img');
+        imgElement.src = src;
+        imgElement.style.display = i === 0 ? 'block' : 'none';  // Show the first image, hide others
+        container.appendChild(imgElement);
+    });
+
+    // Function to cycle through images
+    function showNextImage() {
+        if (!showImages) {
+            clearInterval(intervalId); // Stop the interval if showImages is false
+            return;
+        }
+
+        const currentImage = container.querySelector(`img:nth-child(${index + 1})`);
+        currentImage.style.display = 'none';
+        index = (index + 1) % images.length;
+        const nextImage = container.querySelector(`img:nth-child(${index + 1})`);
+        if (!nextImage) {
+            clearInterval(intervalId); // Stop the interval after cycling through all images
+        } else {
+            nextImage.style.display = 'block';
+        }
+    }
+    // Set interval to show next image
+    const intervalId = setInterval(showNextImage, interval);
+
+    // Function to stop showing images after one phrase
+    function stopShowingImages() {
+        showImages = false;
+    }
+    // Call stopShowingImages after the interval
+    setTimeout(stopShowingImages, images.length * interval);
+}
+
+    </script>
+</head>
+<body>
+    <h1>Speech to Text</h1>
+    <button onclick="submitPhrase()">Start Listening</button>
+    <div id="result"></div>
+</body>
+</html>
